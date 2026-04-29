@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Donnez votre avis</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:linear-gradient(135deg,#6366f1,#8b5cf6);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:16px}
+.card{background:#fff;padding:32px;border-radius:16px;max-width:460px;width:100%;box-shadow:0 24px 48px rgba(0,0,0,.18)}
+h1{margin:0 0 8px;font-size:22px;color:#0f172a}
+p.lead{color:#64748b;margin:0 0 24px;font-size:14px;line-height:1.5}
+.stars{display:flex;gap:8px;justify-content:center;margin:24px 0}
+.star{font-size:44px;cursor:pointer;color:#e5e7eb;transition:transform .1s,color .1s;user-select:none}
+.star:hover,.star.hover{color:#fbbf24;transform:scale(1.1)}
+.star.selected{color:#f59e0b}
+.feedback{display:none}
+textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;resize:vertical;font-family:inherit;font-size:14px;min-height:100px}
+button{background:#4f46e5;color:#fff;padding:12px 20px;border:0;border-radius:8px;font-weight:600;cursor:pointer;width:100%;font-size:14px;margin-top:12px}
+button:hover{background:#4338ca}
+.done{text-align:center;padding:16px 0}
+.done svg{color:#16a34a}
+.error{background:#fee2e2;color:#991b1b;padding:16px;border-radius:8px}
+.loader{text-align:center;color:#64748b}
+</style>
+</head>
+<body>
+<div class="card">
+  <div id="step-loading" class="loader">Chargement…</div>
+  <div id="step-rate" style="display:none">
+    <h1>Comment était votre visite&nbsp;?</h1>
+    <p class="lead">Donnez votre avis sur votre expérience chez <strong id="cabinet-name"></strong>.</p>
+    <div class="stars" id="stars">
+      <span class="star" data-r="1">&#9733;</span><span class="star" data-r="2">&#9733;</span><span class="star" data-r="3">&#9733;</span><span class="star" data-r="4">&#9733;</span><span class="star" data-r="5">&#9733;</span>
+    </div>
+  </div>
+  <div id="step-feedback" class="feedback">
+    <h1>Merci pour votre retour</h1>
+    <p class="lead">Que pourrait-on améliorer&nbsp;?</p>
+    <textarea id="comment" placeholder="Votre commentaire…"></textarea>
+    <button id="send">Envoyer</button>
+  </div>
+  <div id="step-done" class="done" style="display:none">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>
+    <h1>Merci&nbsp;!</h1>
+    <p class="lead">Votre retour a bien été enregistré.</p>
+  </div>
+  <div id="step-error" class="error" style="display:none">Lien invalide ou déjà utilisé.</div>
+</div>
+<script>
+const BASE = 'https://toggwnnuzbtfhsxecnzl.supabase.co/functions/v1';
+const params = new URLSearchParams(location.search);
+const TOKEN = params.get('token') || '';
+let googleUrl = '';
+let chosenRating = null;
+
+function show(id) {
+  ['step-loading','step-rate','step-feedback','step-done','step-error'].forEach(s => {
+    document.getElementById(s).style.display = 'none';
+  });
+  document.getElementById(id).style.display = 'block';
+}
+
+async function init() {
+  if (!TOKEN) return show('step-error');
+  try {
+    const r = await fetch(BASE + '/rating-info?token=' + encodeURIComponent(TOKEN));
+    const d = await r.json();
+    if (!r.ok || d.invalid) return show('step-error');
+    document.getElementById('cabinet-name').textContent = d.cabinetName || 'votre praticien';
+    googleUrl = d.googleUrl || '';
+    show('step-rate');
+  } catch(e) {
+    show('step-error');
+  }
+}
+
+document.querySelectorAll('.star').forEach(s => {
+  const n = parseInt(s.dataset.r);
+  s.addEventListener('mouseenter', () => document.querySelectorAll('.star').forEach((el,i) => el.classList.toggle('hover', (i+1)<=n)));
+  s.addEventListener('mouseleave', () => document.querySelectorAll('.star').forEach(el => el.classList.remove('hover')));
+  s.addEventListener('click', () => onRate(n));
+});
+
+async function onRate(rating) {
+  chosenRating = rating;
+  document.querySelectorAll('.star').forEach((el,i) => el.classList.toggle('selected', (i+1)<=rating));
+  const payload = { token: TOKEN, rating, comment: null };
+  if (rating === 5 && googleUrl) {
+    fetch(BASE + '/submit-review', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({...payload, redirected_to:'google'}) }).catch(()=>{});
+    setTimeout(() => { location.href = googleUrl; }, 600);
+  } else {
+    show('step-feedback');
+  }
+}
+
+document.getElementById('send').addEventListener('click', async () => {
+  const c = document.getElementById('comment').value.trim();
+  await fetch(BASE + '/submit-review', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: TOKEN, rating: chosenRating, comment: c, redirected_to: 'internal' }) });
+  show('step-done');
+});
+
+init();
+</script>
+</body>
+</html>
